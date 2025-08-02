@@ -19,10 +19,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 const ThemeContext = createContext();
 
 const ThemeProvider = ({ children }) => {
-  // Set 'dark' as the default theme
   const [theme, setTheme] = useState('dark'); 
 
-  // Effect to load saved preference from storage
   useEffect(() => {
     const loadTheme = async () => {
       const savedTheme = await AsyncStorage.getItem('theme');
@@ -47,6 +45,37 @@ const ThemeProvider = ({ children }) => {
 };
 
 const useTheme = () => useContext(ThemeContext);
+
+// --- Settings Management ---
+const SettingsContext = createContext();
+
+const SettingsProvider = ({ children }) => {
+    const [historyDuration, setHistoryDuration] = useState('month'); // 'day', 'week', 'month', 'forever'
+
+    useEffect(() => {
+        const loadSettings = async () => {
+            const savedDuration = await AsyncStorage.getItem('historyDuration');
+            if (savedDuration) {
+                setHistoryDuration(savedDuration);
+            }
+        };
+        loadSettings();
+    }, []);
+
+    const changeHistoryDuration = async (duration) => {
+        setHistoryDuration(duration);
+        await AsyncStorage.setItem('historyDuration', duration);
+    };
+
+    return (
+        <SettingsContext.Provider value={{ historyDuration, changeHistoryDuration }}>
+            {children}
+        </SettingsContext.Provider>
+    );
+};
+
+const useSettings = () => useContext(SettingsContext);
+
 
 // --- Data ---
 const routineData = [
@@ -247,16 +276,24 @@ const TodayView = () => {
 
 const SettingsView = ({ onBack }) => {
     const { theme, toggleTheme } = useTheme();
+    const { historyDuration, changeHistoryDuration } = useSettings();
     const styles = getStyles(theme);
     const isDark = theme === 'dark';
+
+    const HistoryOption = ({ value, title }) => (
+        <TouchableOpacity style={styles.settingRow} onPress={() => changeHistoryDuration(value)}>
+            <Text style={styles.settingText}>{title}</Text>
+            {historyDuration === value && <Text style={styles.checkMark}>✓</Text>}
+        </TouchableOpacity>
+    );
 
     return (
         <View style={styles.settingsContainer}>
             <View style={styles.settingsHeader}>
-                <TouchableOpacity onPress={onBack} style={styles.backButton}>
-                    <Text style={styles.backButtonText}>{'< Back'}</Text>
-                </TouchableOpacity>
                 <Text style={styles.settingsTitle}>Settings</Text>
+                <TouchableOpacity onPress={onBack} style={styles.backButton}>
+                    <Text style={styles.backButtonText}>{'Done'}</Text>
+                </TouchableOpacity>
             </View>
             <View style={styles.themeOptionsContainer}>
                  <View style={styles.settingRow}>
@@ -270,6 +307,13 @@ const SettingsView = ({ onBack }) => {
                     />
                 </View>
             </View>
+            <View style={styles.themeOptionsContainer}>
+                <Text style={styles.themeOptionsHeader}>Clear Task History After</Text>
+                <HistoryOption value="day" title="1 Day" />
+                <HistoryOption value="week" title="1 Week" />
+                <HistoryOption value="month" title="1 Month" />
+                <HistoryOption value="forever" title="Forever" />
+            </View>
         </View>
     );
 };
@@ -277,8 +321,40 @@ const SettingsView = ({ onBack }) => {
 // --- Main App Component ---
 const AppContent = () => {
   const { theme } = useTheme();
+  const { historyDuration } = useSettings();
   const styles = getStyles(theme);
   const [activeView, setActiveView] = useState('timetable'); // timetable, today, settings
+
+  useEffect(() => {
+    const cleanupOldTasks = async () => {
+        if (historyDuration === 'forever') return;
+
+        const allKeys = await AsyncStorage.getAllKeys();
+        const taskKeys = allKeys.filter(key => /^\d{4}-\d{2}-\d{2}$/.test(key));
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        let cutoffDate = new Date(today);
+        if (historyDuration === 'day') {
+            cutoffDate.setDate(today.getDate() - 1);
+        } else if (historyDuration === 'week') {
+            cutoffDate.setDate(today.getDate() - 7);
+        } else if (historyDuration === 'month') {
+            cutoffDate.setMonth(today.getMonth() - 1);
+        }
+
+        const keysToDelete = taskKeys.filter(key => {
+            const taskDate = new Date(key);
+            return taskDate < cutoffDate;
+        });
+
+        if (keysToDelete.length > 0) {
+            await AsyncStorage.multiRemove(keysToDelete);
+        }
+    };
+    cleanupOldTasks();
+  }, [historyDuration]);
 
   const renderContent = () => {
     if (activeView === 'settings') {
@@ -326,7 +402,9 @@ const AppContent = () => {
 export default function App() {
   return (
     <ThemeProvider>
-      <AppContent />
+        <SettingsProvider>
+            <AppContent />
+        </SettingsProvider>
     </ThemeProvider>
   );
 }
@@ -360,16 +438,8 @@ const getStyles = (theme) => {
         headerSide: { width: 30, alignItems: 'center' },
         headerText: { fontSize: 20, fontWeight: 'bold', color: colors.text },
         subHeaderText: { fontSize: 14, color: colors.text },
-        hamburgerIcon: {
-            justifyContent: 'space-around',
-            width: 24,
-            height: 18,
-        },
-        hamburgerLine: {
-            height: 2,
-            backgroundColor: colors.text,
-            width: '100%',
-        },
+        hamburgerIcon: { justifyContent: 'space-around', width: 24, height: 18 },
+        hamburgerLine: { height: 2, backgroundColor: colors.text, width: '100%' },
         nav: { flexDirection: 'row', borderBottomWidth: 1, borderColor: colors.cellBorder, backgroundColor: colors.nav },
         navButton: { flex: 1, paddingVertical: 15, alignItems: 'center' },
         navButtonActive: { borderBottomWidth: 3, borderColor: colors.primary },
@@ -412,12 +482,14 @@ const getStyles = (theme) => {
         text: { color: colors.text },
         // Settings View
         settingsContainer: { flex: 1, backgroundColor: colors.container },
-        settingsHeader: { flexDirection: 'row', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: colors.cellBorder, backgroundColor: colors.header },
+        settingsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 15, borderBottomWidth: 1, borderBottomColor: colors.cellBorder, backgroundColor: colors.header },
         backButton: { padding: 5 },
-        backButtonText: { fontSize: 16, color: colors.primary },
-        settingsTitle: { fontSize: 20, fontWeight: 'bold', color: colors.text, marginLeft: 15 },
+        backButtonText: { fontSize: 16, color: colors.primary, fontWeight: 'bold' },
+        settingsTitle: { fontSize: 20, fontWeight: 'bold', color: colors.text },
         themeOptionsContainer: { marginTop: 20, marginHorizontal: 10, backgroundColor: colors.timelineItemBg, borderRadius: 10 },
-        settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: colors.cellBorder, backgroundColor: colors.timelineItemBg },
+        themeOptionsHeader: { fontSize: 14, color: '#888', padding: 15, paddingBottom: 5 },
+        settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: colors.cellBorder },
         settingText: { fontSize: 18, color: colors.text },
+        checkMark: { fontSize: 18, color: colors.primary },
     });
 };
