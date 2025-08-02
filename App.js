@@ -311,7 +311,11 @@ const AppContent = () => {
             <Text style={styles.subHeaderText}>UG 5th Semester | Jul-Dec 2025</Text>
         </View>
         <TouchableOpacity style={styles.headerSide} onPress={() => setActiveView('settings')}>
-            <Text style={styles.settingsIconText}>⚙️</Text>
+            <View style={styles.hamburgerIcon}>
+                <View style={styles.hamburgerLine} />
+                <View style={styles.hamburgerLine} />
+                <View style={styles.hamburgerLine} />
+            </View>
         </TouchableOpacity>
       </View>
       {renderContent()}
@@ -356,7 +360,16 @@ const getStyles = (theme) => {
         headerSide: { width: 30, alignItems: 'center' },
         headerText: { fontSize: 20, fontWeight: 'bold', color: colors.text },
         subHeaderText: { fontSize: 14, color: colors.text },
-        settingsIconText: { fontSize: 24 },
+        hamburgerIcon: {
+            justifyContent: 'space-around',
+            width: 24,
+            height: 18,
+        },
+        hamburgerLine: {
+            height: 2,
+            backgroundColor: colors.text,
+            width: '100%',
+        },
         nav: { flexDirection: 'row', borderBottomWidth: 1, borderColor: colors.cellBorder, backgroundColor: colors.nav },
         navButton: { flex: 1, paddingVertical: 15, alignItems: 'center' },
         navButtonActive: { borderBottomWidth: 3, borderColor: colors.primary },
