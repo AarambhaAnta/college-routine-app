@@ -130,6 +130,7 @@ const timeSlots = [
     '10:30 - 11:30', '11:30 - 12:30',
     '12:30 - 13:30', '13:30 - 14:30', '14:30 - 15:30', '15:30 - 16:30', '16:30 - 17:30'
 ];
+const tags = ['cf', 'lc', 'potd', 'contest'];
 
 // --- Helper Functions ---
 const getCellBackgroundColor = (subject, theme) => {
@@ -143,6 +144,17 @@ const getCellBackgroundColor = (subject, theme) => {
     if (subject.includes('Green Tech')) return isDark ? '#0D47A1' : '#D6EAF8';
     if (subject.includes('Cyber Security')) return isDark ? '#1B5E20' : '#D5F5E3';
     return isDark ? '#3A3A3C' : '#E5E7E9';
+};
+
+const getTagColor = (tag, theme) => {
+    const isDark = theme === 'dark';
+    switch (tag) {
+        case 'cf': return isDark ? '#D32F2F' : '#FFCDD2';
+        case 'lc': return isDark ? '#F57C00' : '#FFE0B2';
+        case 'potd': return isDark ? '#388E3C' : '#C8E6C9';
+        case 'contest': return isDark ? '#1976D2' : '#BBDEFB';
+        default: return isDark ? '#555' : '#eee';
+    }
 };
 
 // --- Components ---
@@ -189,15 +201,10 @@ const TimetableView = () => {
     );
 };
 
-const TodayView = () => {
+const TodayView = ({ onNavigate }) => {
     const { theme } = useTheme();
     const styles = getStyles(theme);
     const [tasks, setTasks] = useState([]);
-    const [modalVisible, setModalVisible] = useState(false);
-    const [taskDesc, setTaskDesc] = useState('');
-    const [date, setDate] = useState(new Date());
-    const [showPicker, setShowPicker] = useState(false);
-    const [editingTask, setEditingTask] = useState(null);
 
     const todayKey = new Date().toISOString().slice(0, 10);
 
@@ -208,49 +215,6 @@ const TodayView = () => {
         };
         loadTasks();
     }, []);
-
-    const onChangeTime = (event, selectedDate) => {
-        const currentDate = selectedDate || date;
-        setShowPicker(Platform.OS === 'ios');
-        setDate(currentDate);
-    };
-
-    const handleOpenModal = (task = null) => {
-        setEditingTask(task);
-        if (task) {
-            const [hours, minutes] = task.time.split(':');
-            const newDate = new Date();
-            newDate.setHours(hours, minutes);
-            setDate(newDate);
-            setTaskDesc(task.description);
-        } else {
-            setDate(new Date());
-            setTaskDesc('');
-        }
-        setModalVisible(true);
-    };
-
-    const handleSaveTask = async () => {
-        const formattedTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-        if (!formattedTime || !taskDesc) return;
-
-        let newTasks;
-        if (editingTask) {
-            // Edit existing task
-            newTasks = tasks.map(task => 
-                task.id === editingTask.id ? { ...task, time: formattedTime, description: taskDesc } : task
-            );
-        } else {
-            // Add new task
-            newTasks = [...tasks, { time: formattedTime, description: taskDesc, id: Date.now(), completed: false }];
-        }
-        
-        setTasks(newTasks);
-        await AsyncStorage.setItem(todayKey, JSON.stringify(newTasks));
-        setModalVisible(false);
-        setEditingTask(null);
-    };
-
 
     const handleToggleTask = async (taskId) => {
         const newTasks = tasks.map(task => 
@@ -290,7 +254,9 @@ const TodayView = () => {
                                 )}
                                 <View style={styles.taskContent}>
                                     <Text style={[styles.timelineTime, item.completed && styles.completedText]}>{item.time || item.startTime}</Text>
-                                    <Text style={[styles.timelineSubject, item.completed && styles.completedText]}>{item.subject || item.description}</Text>
+                                    <Text style={[styles.timelineSubject, item.completed && styles.completedText]}>{item.title || item.subject || item.description}</Text>
+                                    {item.description && item.title && <Text style={[styles.timelineDetails, item.completed && styles.completedText]}>{item.description}</Text>}
+                                    {item.tags && <View style={styles.tagContainer}>{item.tags.map(tag => <Text key={tag} style={[styles.tag, {backgroundColor: getTagColor(tag, theme)}]}>{tag}</Text>)}</View>}
                                     {item.type === 'class' && (
                                         <>
                                             <Text style={styles.timelineDetails}>{item.professor}</Text>
@@ -299,7 +265,7 @@ const TodayView = () => {
                                     )}
                                 </View>
                                 {item.type === 'user-task' && !item.completed && (
-                                    <TouchableOpacity onPress={() => handleOpenModal(item)} style={styles.editButton}>
+                                    <TouchableOpacity onPress={() => onNavigate('addTask', { task: item, dateKey: todayKey })} style={styles.editButton}>
                                         <Text style={styles.editButtonText}>✏️</Text>
                                     </TouchableOpacity>
                                 )}
@@ -308,25 +274,9 @@ const TodayView = () => {
                     )}
                 </View>
             </ScrollView>
-            <TouchableOpacity style={styles.fab} onPress={() => handleOpenModal()}>
+            <TouchableOpacity style={styles.fab} onPress={() => onNavigate('addTask', { dateKey: todayKey })}>
                 <Text style={styles.fabText}>+</Text>
             </TouchableOpacity>
-            <Modal animationType="slide" transparent={true} visible={modalVisible}>
-                <View style={styles.modalContainer}>
-                    <View style={styles.modalView}>
-                        <Text style={styles.modalTitle}>{editingTask ? 'Edit Task' : 'Add New Task'}</Text>
-                        <TouchableOpacity style={styles.timePickerButton} onPress={() => setShowPicker(true)}>
-                            <Text style={styles.timePickerButtonText}>Time: {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</Text>
-                        </TouchableOpacity>
-                        {showPicker && <DateTimePicker testID="dateTimePicker" value={date} mode={'time'} is24Hour={true} display="default" onChange={onChangeTime} />}
-                        <TextInput style={styles.input} placeholder="Task Description" placeholderTextColor={theme === 'dark' ? '#999' : '#ccc'} value={taskDesc} onChangeText={setTaskDesc} />
-                        <View style={styles.modalButtonContainer}>
-                            <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => setModalVisible(false)}><Text style={styles.buttonText}>Cancel</Text></TouchableOpacity>
-                            <TouchableOpacity style={[styles.button, styles.buttonAdd]} onPress={handleSaveTask}><Text style={styles.buttonText}>Save</Text></TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
         </View>
     );
 };
@@ -450,7 +400,9 @@ const HistoryView = ({ onBack }) => {
                                 <View key={index} style={styles.historyItem}>
                                     <View style={styles.taskContent}>
                                         <Text style={styles.timelineTime}>{task.time}</Text>
-                                        <Text style={styles.timelineSubject}>{task.description}</Text>
+                                        <Text style={styles.timelineSubject}>{task.title || task.description}</Text>
+                                        {task.description && task.title && <Text style={styles.timelineDetails}>{task.description}</Text>}
+                                        {task.tags && <View style={styles.tagContainer}>{task.tags.map(tag => <Text key={tag} style={[styles.tag, {backgroundColor: getTagColor(tag, theme)}]}>{tag}</Text>)}</View>}
                                     </View>
                                     <TouchableOpacity onPress={() => handleDeleteTask(date, task.id)} style={styles.deleteButton}>
                                         <Text style={styles.deleteButtonText}>✕</Text>
@@ -465,13 +417,117 @@ const HistoryView = ({ onBack }) => {
     );
 };
 
+const AddTaskView = ({ onBack, route }) => {
+    const { task, dateKey } = route.params;
+    const { theme } = useTheme();
+    const styles = getStyles(theme);
+    
+    const [title, setTitle] = useState(task?.title || '');
+    const [description, setDescription] = useState(task?.description || '');
+    const [selectedTags, setSelectedTags] = useState(task?.tags || []);
+    const [date, setDate] = useState(new Date());
+    const [showPicker, setShowPicker] = useState(false);
+
+    useEffect(() => {
+        if (task && task.time) {
+            const [hours, minutes] = task.time.split(':');
+            const newDate = new Date();
+            newDate.setHours(hours, minutes);
+            setDate(newDate);
+        }
+    }, [task]);
+
+    const handleTagSelect = (tag) => {
+        let newTags = [...selectedTags];
+        if (newTags.includes(tag)) {
+            newTags = newTags.filter(t => t !== tag);
+        } else {
+            if (tag === 'cf') {
+                newTags = newTags.filter(t => t !== 'lc');
+                newTags.push('cf');
+            } else if (tag === 'lc') {
+                newTags = newTags.filter(t => t !== 'cf');
+                newTags.push('lc');
+            } else {
+                newTags.push(tag);
+            }
+        }
+        setSelectedTags(newTags);
+    };
+
+    const handleSave = async () => {
+        const formattedTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        const storedTasks = await AsyncStorage.getItem(dateKey);
+        const tasks = storedTasks ? JSON.parse(storedTasks) : [];
+        
+        let newTasks;
+        if (task) { // Editing
+            newTasks = tasks.map(t => t.id === task.id ? { ...t, title, description, time: formattedTime, tags: selectedTags } : t);
+        } else { // Adding
+            newTasks = [...tasks, { id: Date.now(), title, description, time: formattedTime, tags: selectedTags, completed: false }];
+        }
+
+        await AsyncStorage.setItem(dateKey, JSON.stringify(newTasks));
+        onBack();
+    };
+
+    const onChangeTime = (event, selectedDate) => {
+        const currentDate = selectedDate || date;
+        setShowPicker(Platform.OS === 'ios');
+        setDate(currentDate);
+    };
+
+    return (
+        <View style={styles.settingsContainer}>
+            <View style={styles.settingsHeader}>
+                <Text style={styles.settingsTitle}>{task ? 'Edit Task' : 'Add Task'}</Text>
+                <TouchableOpacity onPress={onBack} style={styles.backButton}>
+                    <Text style={styles.backButtonText}>Cancel</Text>
+                </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.addTaskContainer}>
+                <Text style={styles.inputLabel}>Title</Text>
+                <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="e.g., LeetCode Contest" placeholderTextColor="#888" />
+                
+                <Text style={styles.inputLabel}>Description</Text>
+                <TextInput style={[styles.input, styles.multilineInput]} value={description} onChangeText={setDescription} placeholder="e.g., Solve 3 problems" placeholderTextColor="#888" multiline />
+
+                <Text style={styles.inputLabel}>Time</Text>
+                <TouchableOpacity style={styles.timePickerButton} onPress={() => setShowPicker(true)}>
+                    <Text style={styles.timePickerButtonText}>{date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</Text>
+                </TouchableOpacity>
+                {showPicker && <DateTimePicker value={date} mode={'time'} is24Hour={true} display="default" onChange={onChangeTime} />}
+
+                <Text style={styles.inputLabel}>Tags</Text>
+                <View style={styles.tagSelector}>
+                    {tags.map(tag => (
+                        <TouchableOpacity key={tag} style={[styles.tagOption, selectedTags.includes(tag) && styles.tagOptionSelected]} onPress={() => handleTagSelect(tag)}>
+                            <Text style={[styles.tagOptionText, selectedTags.includes(tag) && styles.tagOptionTextSelected]}>{tag}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+
+                <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+                    <Text style={styles.saveButtonText}>Save Task</Text>
+                </TouchableOpacity>
+            </ScrollView>
+        </View>
+    );
+};
+
 
 // --- Main App Component ---
 const AppContent = () => {
   const { theme } = useTheme();
   const { historyDuration } = useSettings();
   const styles = getStyles(theme);
-  const [activeView, setActiveView] = useState('timetable'); // timetable, today, settings, history
+  const [activeView, setActiveView] = useState('timetable');
+  const [navParams, setNavParams] = useState({});
+
+  const handleNavigate = (view, params = {}) => {
+      setNavParams({ [view]: params });
+      setActiveView(view);
+  };
 
   useEffect(() => {
     const cleanupOldTasks = async () => {
@@ -506,10 +562,13 @@ const AppContent = () => {
 
   const renderContent = () => {
     if (activeView === 'settings') {
-      return <SettingsView onBack={() => setActiveView('timetable')} onNavigate={setActiveView} />;
+      return <SettingsView onBack={() => setActiveView('timetable')} onNavigate={handleNavigate} />;
     }
     if (activeView === 'history') {
         return <HistoryView onBack={() => setActiveView('settings')} />;
+    }
+    if (activeView === 'addTask') {
+        return <AddTaskView onBack={() => setActiveView('today')} route={{ params: navParams.addTask }} />;
     }
     return (
       <>
@@ -522,7 +581,7 @@ const AppContent = () => {
           </TouchableOpacity>
         </View>
         <View style={styles.container}>
-          {activeView === 'timetable' ? <TimetableView /> : <TodayView />}
+          {activeView === 'timetable' ? <TimetableView /> : <TodayView onNavigate={handleNavigate} />}
         </View>
       </>
     );
@@ -661,5 +720,27 @@ const getStyles = (theme) => {
         historyDateSection: { marginBottom: 20 },
         historyDateHeader: { fontSize: 18, fontWeight: 'bold', color: colors.text, marginBottom: 10, paddingBottom: 5, borderBottomWidth: 1, borderBottomColor: colors.cellBorder },
         historyItem: { padding: 10, backgroundColor: colors.timelineItemBg, borderRadius: 5, marginBottom: 5, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+        // Add Task View
+        addTaskContainer: { padding: 20 },
+        inputLabel: { fontSize: 16, color: colors.text, marginBottom: 10, marginTop: 15 },
+        multilineInput: { height: 100, textAlignVertical: 'top' },
+        tagSelector: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 20 },
+        tagOption: { paddingVertical: 8, paddingHorizontal: 15, borderRadius: 20, borderWidth: 1, borderColor: colors.primary, marginRight: 10, marginBottom: 10 },
+        tagOptionSelected: { backgroundColor: colors.primary },
+        tagOptionText: { color: colors.primary },
+        tagOptionTextSelected: { color: '#FFFFFF' },
+        saveButton: { backgroundColor: colors.primary, padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 20 },
+        saveButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
+        tagContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 5 },
+        tag: {
+            marginRight: 5,
+            paddingVertical: 3,
+            paddingHorizontal: 8,
+            borderRadius: 10,
+            alignSelf: 'flex-start',
+            overflow: 'hidden',
+            color: 'white',
+            fontSize: 12,
+        },
     });
 };
