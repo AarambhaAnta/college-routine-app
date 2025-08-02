@@ -274,18 +274,21 @@ const TodayView = () => {
     );
 };
 
-const SettingsView = ({ onBack }) => {
+const SettingsView = ({ onBack, onNavigate }) => {
     const { theme, toggleTheme } = useTheme();
     const { historyDuration, changeHistoryDuration } = useSettings();
     const styles = getStyles(theme);
     const isDark = theme === 'dark';
+    const [pickerVisible, setPickerVisible] = useState(false);
 
-    const HistoryOption = ({ value, title }) => (
-        <TouchableOpacity style={styles.settingRow} onPress={() => changeHistoryDuration(value)}>
-            <Text style={styles.settingText}>{title}</Text>
-            {historyDuration === value && <Text style={styles.checkMark}>✓</Text>}
-        </TouchableOpacity>
-    );
+    const historyOptions = [
+        { label: '1 Day', value: 'day' },
+        { label: '1 Week', value: 'week' },
+        { label: '1 Month', value: 'month' },
+        { label: 'Forever', value: 'forever' },
+    ];
+
+    const currentDurationLabel = historyOptions.find(opt => opt.value === historyDuration)?.label;
 
     return (
         <View style={styles.settingsContainer}>
@@ -295,7 +298,8 @@ const SettingsView = ({ onBack }) => {
                     <Text style={styles.backButtonText}>{'Done'}</Text>
                 </TouchableOpacity>
             </View>
-            <View style={styles.themeOptionsContainer}>
+            
+            <View style={styles.settingsSection}>
                  <View style={styles.settingRow}>
                     <Text style={styles.settingText}>Dark Mode</Text>
                     <Switch
@@ -307,23 +311,92 @@ const SettingsView = ({ onBack }) => {
                     />
                 </View>
             </View>
-            <View style={styles.themeOptionsContainer}>
-                <Text style={styles.themeOptionsHeader}>Clear Task History After</Text>
-                <HistoryOption value="day" title="1 Day" />
-                <HistoryOption value="week" title="1 Week" />
-                <HistoryOption value="month" title="1 Month" />
-                <HistoryOption value="forever" title="Forever" />
+
+            <View style={styles.settingsSection}>
+                <TouchableOpacity style={styles.settingRow} onPress={() => onNavigate('history')}>
+                    <Text style={styles.settingText}>View Task History</Text>
+                    <Text style={styles.arrowIcon}>{'>'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.settingRow} onPress={() => setPickerVisible(true)}>
+                    <Text style={styles.settingText}>Clear History After</Text>
+                    <Text style={styles.durationText}>{currentDurationLabel}</Text>
+                </TouchableOpacity>
             </View>
+
+            <Modal animationType="slide" transparent={true} visible={pickerVisible}>
+                <TouchableOpacity style={styles.modalContainer} onPress={() => setPickerVisible(false)}>
+                    <View style={styles.pickerModalView}>
+                        {historyOptions.map(opt => (
+                            <TouchableOpacity key={opt.value} style={styles.pickerOption} onPress={() => { changeHistoryDuration(opt.value); setPickerVisible(false); }}>
+                                <Text style={styles.pickerOptionText}>{opt.label}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </TouchableOpacity>
+            </Modal>
         </View>
     );
 };
+
+const HistoryView = ({ onBack }) => {
+    const { theme } = useTheme();
+    const styles = getStyles(theme);
+    const [history, setHistory] = useState({});
+
+    useEffect(() => {
+        const loadHistory = async () => {
+            const allKeys = await AsyncStorage.getAllKeys();
+            const taskKeys = allKeys.filter(key => /^\d{4}-\d{2}-\d{2}$/.test(key));
+            const historyData = {};
+            for (const key of taskKeys) {
+                const tasks = await AsyncStorage.getItem(key);
+                if (tasks) {
+                    historyData[key] = JSON.parse(tasks);
+                }
+            }
+            setHistory(historyData);
+        };
+        loadHistory();
+    }, []);
+
+    const sortedDates = Object.keys(history).sort((a, b) => new Date(b) - new Date(a));
+
+    return (
+        <View style={styles.settingsContainer}>
+            <View style={styles.settingsHeader}>
+                <TouchableOpacity onPress={onBack} style={styles.backButton}>
+                    <Text style={styles.backButtonText}>{'< Settings'}</Text>
+                </TouchableOpacity>
+                <Text style={styles.settingsTitle}>Task History</Text>
+            </View>
+            <ScrollView contentContainerStyle={styles.todayViewContainer}>
+                {sortedDates.length === 0 ? (
+                    <Text style={styles.text}>No history found.</Text>
+                ) : (
+                    sortedDates.map(date => (
+                        <View key={date} style={styles.historyDateSection}>
+                            <Text style={styles.historyDateHeader}>{new Date(date).toDateString()}</Text>
+                            {history[date].map((task, index) => (
+                                <View key={index} style={styles.historyItem}>
+                                    <Text style={styles.timelineTime}>{task.time}</Text>
+                                    <Text style={styles.timelineSubject}>{task.description}</Text>
+                                </View>
+                            ))}
+                        </View>
+                    ))
+                )}
+            </ScrollView>
+        </View>
+    );
+};
+
 
 // --- Main App Component ---
 const AppContent = () => {
   const { theme } = useTheme();
   const { historyDuration } = useSettings();
   const styles = getStyles(theme);
-  const [activeView, setActiveView] = useState('timetable'); // timetable, today, settings
+  const [activeView, setActiveView] = useState('timetable'); // timetable, today, settings, history
 
   useEffect(() => {
     const cleanupOldTasks = async () => {
@@ -358,7 +431,10 @@ const AppContent = () => {
 
   const renderContent = () => {
     if (activeView === 'settings') {
-      return <SettingsView onBack={() => setActiveView('timetable')} />;
+      return <SettingsView onBack={() => setActiveView('timetable')} onNavigate={setActiveView} />;
+    }
+    if (activeView === 'history') {
+        return <HistoryView onBack={() => setActiveView('settings')} />;
     }
     return (
       <>
@@ -486,10 +562,19 @@ const getStyles = (theme) => {
         backButton: { padding: 5 },
         backButtonText: { fontSize: 16, color: colors.primary, fontWeight: 'bold' },
         settingsTitle: { fontSize: 20, fontWeight: 'bold', color: colors.text },
-        themeOptionsContainer: { marginTop: 20, marginHorizontal: 10, backgroundColor: colors.timelineItemBg, borderRadius: 10 },
+        settingsSection: { marginTop: 20, marginHorizontal: 10, backgroundColor: colors.timelineItemBg, borderRadius: 10 },
         themeOptionsHeader: { fontSize: 14, color: '#888', padding: 15, paddingBottom: 5 },
         settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: colors.cellBorder },
         settingText: { fontSize: 18, color: colors.text },
+        arrowIcon: { fontSize: 18, color: '#888' },
+        durationText: { fontSize: 16, color: '#888' },
         checkMark: { fontSize: 18, color: colors.primary },
+        pickerModalView: { position: 'absolute', bottom: 0, width: '100%', backgroundColor: colors.modalBg, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
+        pickerOption: { padding: 20, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: colors.cellBorder },
+        pickerOptionText: { fontSize: 18, color: colors.primary },
+        // History View
+        historyDateSection: { marginBottom: 20 },
+        historyDateHeader: { fontSize: 18, fontWeight: 'bold', color: colors.text, marginBottom: 10, paddingBottom: 5, borderBottomWidth: 1, borderBottomColor: colors.cellBorder },
+        historyItem: { padding: 10, backgroundColor: colors.timelineItemBg, borderRadius: 5, marginBottom: 5 },
     });
 };
