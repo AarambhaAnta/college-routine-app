@@ -11,6 +11,7 @@ import {
   Platform,
   StatusBar,
   Switch,
+  Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -216,7 +217,7 @@ const TodayView = () => {
     const handleAddTask = async () => {
         const formattedTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
         if (!formattedTime || !taskDesc) return;
-        const newTasks = [...tasks, { time: formattedTime, description: taskDesc }];
+        const newTasks = [...tasks, { time: formattedTime, description: taskDesc, id: Date.now() }];
         setTasks(newTasks);
         await AsyncStorage.setItem(todayKey, JSON.stringify(newTasks));
         setModalVisible(false);
@@ -238,14 +239,16 @@ const TodayView = () => {
                     ) : (
                         allItems.map((item, index) => (
                             <View key={index} style={[styles.timelineItem, item.type === 'user-task' && styles.userTaskItem]}>
-                                <Text style={styles.timelineTime}>{item.time || item.startTime}</Text>
-                                <Text style={styles.timelineSubject}>{item.subject || item.description}</Text>
-                                {item.type === 'class' && (
-                                    <>
-                                        <Text style={styles.timelineDetails}>{item.professor}</Text>
-                                        <Text style={[styles.timelineDetails, { fontStyle: 'italic' }]}>{item.location}</Text>
-                                    </>
-                                )}
+                                <View style={styles.taskContent}>
+                                    <Text style={styles.timelineTime}>{item.time || item.startTime}</Text>
+                                    <Text style={styles.timelineSubject}>{item.subject || item.description}</Text>
+                                    {item.type === 'class' && (
+                                        <>
+                                            <Text style={styles.timelineDetails}>{item.professor}</Text>
+                                            <Text style={[styles.timelineDetails, { fontStyle: 'italic' }]}>{item.location}</Text>
+                                        </>
+                                    )}
+                                </View>
                             </View>
                         ))
                     )}
@@ -343,31 +346,44 @@ const HistoryView = ({ onBack }) => {
     const styles = getStyles(theme);
     const [history, setHistory] = useState({});
 
-    useEffect(() => {
-        const loadHistory = async () => {
-            const allKeys = await AsyncStorage.getAllKeys();
-            const taskKeys = allKeys.filter(key => /^\d{4}-\d{2}-\d{2}$/.test(key));
-            const historyData = {};
-            for (const key of taskKeys) {
-                const tasks = await AsyncStorage.getItem(key);
-                if (tasks) {
-                    historyData[key] = JSON.parse(tasks);
-                }
+    const loadHistory = async () => {
+        const allKeys = await AsyncStorage.getAllKeys();
+        const taskKeys = allKeys.filter(key => /^\d{4}-\d{2}-\d{2}$/.test(key));
+        const historyData = {};
+        for (const key of taskKeys) {
+            const tasks = await AsyncStorage.getItem(key);
+            if (tasks) {
+                historyData[key] = JSON.parse(tasks);
             }
-            setHistory(historyData);
-        };
+        }
+        setHistory(historyData);
+    };
+
+    useEffect(() => {
         loadHistory();
     }, []);
+
+    const handleDeleteTask = async (dateKey, taskId) => {
+        const newTasksForDate = history[dateKey].filter(task => task.id !== taskId);
+        const newHistory = { ...history, [dateKey]: newTasksForDate };
+        if (newTasksForDate.length === 0) {
+            delete newHistory[dateKey];
+            await AsyncStorage.removeItem(dateKey);
+        } else {
+            await AsyncStorage.setItem(dateKey, JSON.stringify(newTasksForDate));
+        }
+        setHistory(newHistory);
+    };
 
     const sortedDates = Object.keys(history).sort((a, b) => new Date(b) - new Date(a));
 
     return (
         <View style={styles.settingsContainer}>
             <View style={styles.settingsHeader}>
-                <TouchableOpacity onPress={onBack} style={styles.backButton}>
+                <Text style={styles.settingsTitle}>Task History</Text>
+                 <TouchableOpacity onPress={onBack} style={styles.backButton}>
                     <Text style={styles.backButtonText}>{'< Settings'}</Text>
                 </TouchableOpacity>
-                <Text style={styles.settingsTitle}>Task History</Text>
             </View>
             <ScrollView contentContainerStyle={styles.todayViewContainer}>
                 {sortedDates.length === 0 ? (
@@ -378,8 +394,13 @@ const HistoryView = ({ onBack }) => {
                             <Text style={styles.historyDateHeader}>{new Date(date).toDateString()}</Text>
                             {history[date].map((task, index) => (
                                 <View key={index} style={styles.historyItem}>
-                                    <Text style={styles.timelineTime}>{task.time}</Text>
-                                    <Text style={styles.timelineSubject}>{task.description}</Text>
+                                    <View style={styles.taskContent}>
+                                        <Text style={styles.timelineTime}>{task.time}</Text>
+                                        <Text style={styles.timelineSubject}>{task.description}</Text>
+                                    </View>
+                                    <TouchableOpacity onPress={() => handleDeleteTask(date, task.id)} style={styles.deleteButton}>
+                                        <Text style={styles.deleteButtonText}>✕</Text>
+                                    </TouchableOpacity>
                                 </View>
                             ))}
                         </View>
@@ -505,6 +526,7 @@ const getStyles = (theme) => {
         inputBg: isDark ? '#3A3A3C' : '#FFFFFF',
         inputText: isDark ? '#FFFFFF' : '#000000',
         buttonClose: isDark ? '#555' : '#ccc',
+        deleteButton: isDark ? '#555' : '#ddd',
     };
 
     return StyleSheet.create({
@@ -537,13 +559,16 @@ const getStyles = (theme) => {
         legendColorBox: { width: 14, height: 14, marginRight: 8, borderRadius: 3 },
         todayViewContainer: { padding: 15, paddingBottom: 80 },
         timelineContainer: { borderLeftWidth: 3, borderColor: colors.primary, paddingLeft: 20 },
-        timelineItem: { position: 'relative', marginBottom: 15, padding: 15, backgroundColor: colors.timelineItemBg, borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2, marginLeft: 15 },
+        timelineItem: { position: 'relative', marginBottom: 15, padding: 15, backgroundColor: colors.timelineItemBg, borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2, marginLeft: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+        taskContent: { flex: 1 },
         userTaskItem: { backgroundColor: colors.userTaskItemBg },
         timelineTime: { fontWeight: 'bold', color: colors.primary, marginBottom: 5 },
         timelineSubject: { fontSize: 16, fontWeight: '600', color: colors.text },
         timelineDetails: { fontSize: 13, color: colors.text, marginTop: 3 },
         fab: { position: 'absolute', bottom: 25, right: 25, width: 60, height: 60, borderRadius: 30, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', elevation: 8 },
         fabText: { fontSize: 30, color: 'white' },
+        deleteButton: { padding: 10, marginLeft: 10 },
+        deleteButtonText: { fontSize: 18, color: '#ff3b30' },
         modalContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
         modalView: { width: '85%', backgroundColor: colors.modalBg, borderRadius: 20, padding: 25, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 5 },
         modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 15, color: colors.text },
@@ -575,6 +600,6 @@ const getStyles = (theme) => {
         // History View
         historyDateSection: { marginBottom: 20 },
         historyDateHeader: { fontSize: 18, fontWeight: 'bold', color: colors.text, marginBottom: 10, paddingBottom: 5, borderBottomWidth: 1, borderBottomColor: colors.cellBorder },
-        historyItem: { padding: 10, backgroundColor: colors.timelineItemBg, borderRadius: 5, marginBottom: 5 },
+        historyItem: { padding: 10, backgroundColor: colors.timelineItemBg, borderRadius: 5, marginBottom: 5, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     });
 };
