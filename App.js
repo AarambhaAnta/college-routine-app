@@ -217,18 +217,34 @@ const TodayView = () => {
     const handleAddTask = async () => {
         const formattedTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
         if (!formattedTime || !taskDesc) return;
-        const newTasks = [...tasks, { time: formattedTime, description: taskDesc, id: Date.now() }];
+        const newTasks = [...tasks, { time: formattedTime, description: taskDesc, id: Date.now(), completed: false }];
         setTasks(newTasks);
         await AsyncStorage.setItem(todayKey, JSON.stringify(newTasks));
         setModalVisible(false);
         setTaskDesc('');
     };
 
+    const handleToggleTask = async (taskId) => {
+        const newTasks = tasks.map(task => 
+            task.id === taskId ? { ...task, completed: !task.completed } : task
+        );
+        setTasks(newTasks);
+        await AsyncStorage.setItem(todayKey, JSON.stringify(newTasks));
+    };
+
     const dayIndex = new Date().getDay();
     const todayName = (dayIndex > 0 && dayIndex < 6) ? days[dayIndex - 1] : null;
     const scheduledClasses = todayName ? routineData.filter(item => item.day === todayName && item.subject).map(item => ({...item, type: 'class', startTime: item.time.split(' - ')[0] })) : [];
     const userTasks = tasks.map(task => ({ ...task, type: 'user-task', startTime: task.time }));
-    const allItems = [...scheduledClasses, ...userTasks].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    
+    const allItems = [...scheduledClasses, ...userTasks].sort((a, b) => {
+        if (a.type === 'user-task' && b.type === 'user-task') {
+            return a.completed - b.completed || a.startTime.localeCompare(b.startTime);
+        }
+        if (a.type === 'user-task' && a.completed) return 1;
+        if (b.type === 'user-task' && b.completed) return -1;
+        return a.startTime.localeCompare(b.startTime);
+    });
 
     return (
         <View style={{ flex: 1 }}>
@@ -238,10 +254,15 @@ const TodayView = () => {
                         <View style={styles.timelineItem}><Text style={styles.text}>No classes or tasks for today.</Text></View>
                     ) : (
                         allItems.map((item, index) => (
-                            <View key={index} style={[styles.timelineItem, item.type === 'user-task' && styles.userTaskItem]}>
+                            <View key={index} style={[styles.timelineItem, item.type === 'user-task' && item.completed && styles.userTaskItemCompleted]}>
+                                {item.type === 'user-task' && (
+                                    <TouchableOpacity style={styles.checkbox} onPress={() => handleToggleTask(item.id)}>
+                                        {item.completed && <View style={styles.checkboxFilled} />}
+                                    </TouchableOpacity>
+                                )}
                                 <View style={styles.taskContent}>
-                                    <Text style={styles.timelineTime}>{item.time || item.startTime}</Text>
-                                    <Text style={styles.timelineSubject}>{item.subject || item.description}</Text>
+                                    <Text style={[styles.timelineTime, item.completed && styles.completedText]}>{item.time || item.startTime}</Text>
+                                    <Text style={[styles.timelineSubject, item.completed && styles.completedText]}>{item.subject || item.description}</Text>
                                     {item.type === 'class' && (
                                         <>
                                             <Text style={styles.timelineDetails}>{item.professor}</Text>
@@ -522,6 +543,7 @@ const getStyles = (theme) => {
         headerCellBg: isDark ? '#2C2C2E' : '#f2f2f2',
         timelineItemBg: isDark ? '#1C1C1E' : '#FFFFFF',
         userTaskItemBg: isDark ? '#1B5E20' : '#E8F5E9',
+        completedTaskBg: isDark ? '#004D40' : '#C8E6C9',
         modalBg: isDark ? '#2C2C2E' : '#FFFFFF',
         inputBg: isDark ? '#3A3A3C' : '#FFFFFF',
         inputText: isDark ? '#FFFFFF' : '#000000',
@@ -559,9 +581,12 @@ const getStyles = (theme) => {
         legendColorBox: { width: 14, height: 14, marginRight: 8, borderRadius: 3 },
         todayViewContainer: { padding: 15, paddingBottom: 80 },
         timelineContainer: { borderLeftWidth: 3, borderColor: colors.primary, paddingLeft: 20 },
-        timelineItem: { position: 'relative', marginBottom: 15, padding: 15, backgroundColor: colors.timelineItemBg, borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2, marginLeft: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-        taskContent: { flex: 1 },
-        userTaskItem: { backgroundColor: colors.userTaskItemBg },
+        timelineItem: { position: 'relative', marginBottom: 15, paddingVertical: 15, paddingHorizontal: 10, backgroundColor: colors.timelineItemBg, borderRadius: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2, marginLeft: 15, flexDirection: 'row', alignItems: 'center' },
+        taskContent: { flex: 1, marginLeft: 15 },
+        userTaskItemCompleted: { backgroundColor: colors.completedTaskBg },
+        completedText: { textDecorationLine: 'line-through', color: '#A5A5A5' },
+        checkbox: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: colors.primary, justifyContent: 'center', alignItems: 'center' },
+        checkboxFilled: { width: 14, height: 14, borderRadius: 7, backgroundColor: colors.primary },
         timelineTime: { fontWeight: 'bold', color: colors.primary, marginBottom: 5 },
         timelineSubject: { fontSize: 16, fontWeight: '600', color: colors.text },
         timelineDetails: { fontSize: 13, color: colors.text, marginTop: 3 },
