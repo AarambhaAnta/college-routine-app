@@ -197,6 +197,7 @@ const TodayView = () => {
     const [taskDesc, setTaskDesc] = useState('');
     const [date, setDate] = useState(new Date());
     const [showPicker, setShowPicker] = useState(false);
+    const [editingTask, setEditingTask] = useState(null);
 
     const todayKey = new Date().toISOString().slice(0, 10);
 
@@ -214,15 +215,42 @@ const TodayView = () => {
         setDate(currentDate);
     };
 
-    const handleAddTask = async () => {
+    const handleOpenModal = (task = null) => {
+        setEditingTask(task);
+        if (task) {
+            const [hours, minutes] = task.time.split(':');
+            const newDate = new Date();
+            newDate.setHours(hours, minutes);
+            setDate(newDate);
+            setTaskDesc(task.description);
+        } else {
+            setDate(new Date());
+            setTaskDesc('');
+        }
+        setModalVisible(true);
+    };
+
+    const handleSaveTask = async () => {
         const formattedTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
         if (!formattedTime || !taskDesc) return;
-        const newTasks = [...tasks, { time: formattedTime, description: taskDesc, id: Date.now(), completed: false }];
+
+        let newTasks;
+        if (editingTask) {
+            // Edit existing task
+            newTasks = tasks.map(task => 
+                task.id === editingTask.id ? { ...task, time: formattedTime, description: taskDesc } : task
+            );
+        } else {
+            // Add new task
+            newTasks = [...tasks, { time: formattedTime, description: taskDesc, id: Date.now(), completed: false }];
+        }
+        
         setTasks(newTasks);
         await AsyncStorage.setItem(todayKey, JSON.stringify(newTasks));
         setModalVisible(false);
-        setTaskDesc('');
+        setEditingTask(null);
     };
+
 
     const handleToggleTask = async (taskId) => {
         const newTasks = tasks.map(task => 
@@ -270,18 +298,23 @@ const TodayView = () => {
                                         </>
                                     )}
                                 </View>
+                                {item.type === 'user-task' && !item.completed && (
+                                    <TouchableOpacity onPress={() => handleOpenModal(item)} style={styles.editButton}>
+                                        <Text style={styles.editButtonText}>✏️</Text>
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         ))
                     )}
                 </View>
             </ScrollView>
-            <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
+            <TouchableOpacity style={styles.fab} onPress={() => handleOpenModal()}>
                 <Text style={styles.fabText}>+</Text>
             </TouchableOpacity>
             <Modal animationType="slide" transparent={true} visible={modalVisible}>
                 <View style={styles.modalContainer}>
                     <View style={styles.modalView}>
-                        <Text style={styles.modalTitle}>Add New Task</Text>
+                        <Text style={styles.modalTitle}>{editingTask ? 'Edit Task' : 'Add New Task'}</Text>
                         <TouchableOpacity style={styles.timePickerButton} onPress={() => setShowPicker(true)}>
                             <Text style={styles.timePickerButtonText}>Time: {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</Text>
                         </TouchableOpacity>
@@ -289,7 +322,7 @@ const TodayView = () => {
                         <TextInput style={styles.input} placeholder="Task Description" placeholderTextColor={theme === 'dark' ? '#999' : '#ccc'} value={taskDesc} onChangeText={setTaskDesc} />
                         <View style={styles.modalButtonContainer}>
                             <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => setModalVisible(false)}><Text style={styles.buttonText}>Cancel</Text></TouchableOpacity>
-                            <TouchableOpacity style={[styles.button, styles.buttonAdd]} onPress={handleAddTask}><Text style={styles.buttonText}>Add</Text></TouchableOpacity>
+                            <TouchableOpacity style={[styles.button, styles.buttonAdd]} onPress={handleSaveTask}><Text style={styles.buttonText}>Save</Text></TouchableOpacity>
                         </View>
                     </View>
                 </View>
@@ -592,6 +625,8 @@ const getStyles = (theme) => {
         timelineDetails: { fontSize: 13, color: colors.text, marginTop: 3 },
         fab: { position: 'absolute', bottom: 25, right: 25, width: 60, height: 60, borderRadius: 30, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', elevation: 8 },
         fabText: { fontSize: 30, color: 'white' },
+        editButton: { padding: 10 },
+        editButtonText: { fontSize: 18 },
         deleteButton: { padding: 10, marginLeft: 10 },
         deleteButtonText: { fontSize: 18, color: '#ff3b30' },
         modalContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
